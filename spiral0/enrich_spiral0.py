@@ -71,22 +71,34 @@ MODEL_CONFIGS = {
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are analyzing blank meme templates at the archetype level.
+You are analyzing memes and meme templates at the archetype level.
 
-An archetype is a higher-level communicative pattern or persona that encodes \
-a recurring pragmatic function and interpretive framing, shaping how a meme's \
-content is understood beyond its literal visual and textual elements. Archetypes \
-may be instantiated through one or more meme templates and provide the semantic \
-grounding necessary for interpreting implicit meaning.
+An archetype is a higher-level communicative pattern or persona that encodes a \
+recurring pragmatic function and interpretive framing, shaping how a meme's content \
+is understood beyond its literal visual and textual elements. Archetypes may be \
+instantiated through one or more meme templates and provide the semantic grounding \
+necessary for interpreting implicit meaning.
 
-Your task is to identify the archetype embodied by a template — not to describe \
-its visual appearance or origin, but to name the communicative pattern it \
+Your task is to identify the archetype embodied by the input. Do not merely describe \
+its visual appearance or origin. Instead, determine the communicative pattern it \
 instantiates and how it frames the meaning of any caption placed on it.
 
-You will be shown worked examples, each with the blank template image and a \
-factual "about" description. Study how the about informs the reasoning.
+You may be shown worked examples, each with an image and a factual "about" description. \
+Study how the about text informs the reasoning.
 
-Then analyze a new template image and produce the same output.
+For the current input, you must:
+1. Identify the specific visual elements that are essential to the interpretation.
+2. Identify the specific textual elements that are essential to the interpretation.
+3. Explain how these cues contribute to the communicative pattern.
+4. Infer the archetype from the combined evidence.
+
+Important rules:
+- Do not list generic or irrelevant details.
+- Only include visual and textual cues that directly support your interpretation.
+- If no text is present, return an empty list for textual_cues.
+- If the input is a blank template, focus on the communicative function suggested by the image itself.
+- If the input is a full meme, interpret the image and text jointly.
+- Your reasoning must be grounded in the meme as a whole, not in only one modality.
 
 Respond ONLY with valid JSON. No preamble, no markdown fences.\
 """
@@ -174,6 +186,18 @@ def build_few_shot_blocks(examples: list[dict]) -> list[dict]:
                 f'  "template_name": "{title}",\n'
                 '  "template_reasoning": "<what this template communicates, grounded in its visual identity and pragmatic function>",\n'
                 '  "archetype": "<concise label for the communicative archetype>",\n'
+                '  "pragmatic_function": "<what speech act or communicative goal this archetype performs>",\n'
+                '  "caption_dependence": "low | medium | high",\n'
+                '  "grounding": {\n'
+                '    "visual_cues": ["<visual element essential to interpretation>"],\n'
+                '    "textual_cues": ["<textual element essential to interpretation, or empty list>"]\n'
+                '  },\n'
+                '  "modality_use": {\n'
+                '    "image_required": true,\n'
+                '    "text_required": true,\n'
+                '    "both_required": true,\n'
+                '    "justification": "<why this modality combination is necessary>"\n'
+                '  },\n'
                 '  "needs_human_review": false\n'
                 '}'
             ),
@@ -203,7 +227,12 @@ def call_llm(
         target.append({"type": "text", "text": "(image unavailable — reason from title only)"})
     target.append({
         "type": "text",
-        "text": "Produce strict JSON with keys: template_name, template_reasoning, archetype, needs_human_review",
+        "text": (
+            "Produce strict JSON with keys: template_name, template_reasoning, archetype, "
+            "pragmatic_function, caption_dependence, grounding (with visual_cues and textual_cues), "
+            "modality_use (with image_required, text_required, both_required, justification), "
+            "needs_human_review"
+        ),
     })
 
     messages = [
@@ -325,11 +354,19 @@ def run_spiral0(
             if parsed:
                 rec["template_reasoning"] = parsed.get("template_reasoning", "")
                 rec["archetype"]          = parsed.get("archetype", "")
+                rec["pragmatic_function"] = parsed.get("pragmatic_function", "")
+                rec["caption_dependence"] = parsed.get("caption_dependence", "")
+                rec["grounding"]          = parsed.get("grounding", {"visual_cues": [], "textual_cues": []})
+                rec["modality_use"]       = parsed.get("modality_use", {})
                 rec["needs_human_review"] = parsed.get("needs_human_review", False)
                 print(f"  [OK]   {rec['archetype']}")
             else:
                 rec["template_reasoning"] = ""
                 rec["archetype"]          = ""
+                rec["pragmatic_function"] = ""
+                rec["caption_dependence"] = ""
+                rec["grounding"]          = {"visual_cues": [], "textual_cues": []}
+                rec["modality_use"]       = {}
                 rec["needs_human_review"] = True
                 total_flagged += 1
                 print(f"  [ERROR] Flagged for review")
